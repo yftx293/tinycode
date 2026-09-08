@@ -14,6 +14,12 @@ import { loadSkills } from "./skills/loader.js";
 import type { SkillRegistry } from "./skills/registry.js";
 import { McpManager } from "./mcp/manager.js";
 import type { StdioMcpServerConfig } from "./mcp/client.js";
+import { SubAgentManager } from "./agents/manager.js";
+import { createSubAgentTools } from "./agents/tools.js";
+
+export interface BootstrapSubAgentOptions {
+  toolResultMaxChars?: number;
+}
 
 export interface BootstrapSessionOptions {
   directory: string;
@@ -33,6 +39,7 @@ export interface BootstrapHarnessOptions {
   context?: Omit<ContextManagerOptions, "session">;
   skills?: BootstrapSkillOptions;
   mcpServers?: Record<string, StdioMcpServerConfig>;
+  subAgents?: BootstrapSubAgentOptions;
 }
 
 export interface TinyCodeHarness {
@@ -43,6 +50,7 @@ export interface TinyCodeHarness {
   context: ContextManager;
   skills: SkillRegistry;
   mcp: McpManager;
+  agents: SubAgentManager | undefined;
   shutdown(): Promise<void>;
 }
 
@@ -81,6 +89,22 @@ export async function bootstrapHarness(
     tools.register(tool);
   }
   tools.register(skills.createLoadTool());
+  const agents =
+    options.subAgents === undefined
+      ? undefined
+      : new SubAgentManager({
+          projectRoot: options.projectRoot,
+          model,
+          streamFn: models.streamFn,
+          ...(options.subAgents.toolResultMaxChars === undefined
+            ? {}
+            : { toolResultMaxChars: options.subAgents.toolResultMaxChars }),
+        });
+  if (agents !== undefined) {
+    for (const tool of createSubAgentTools(agents)) {
+      tools.register(tool);
+    }
+  }
   const mcp = await McpManager.connect({
     cwd: options.projectRoot,
     ...(options.mcpServers === undefined
@@ -109,6 +133,12 @@ export async function bootstrapHarness(
     context,
     skills,
     mcp,
-    shutdown: () => mcp.shutdown(),
+    agents,
+    shutdown: async () => {
+      await Promise.all([
+        mcp.shutdown(),
+        agents?.shutdown() ?? Promise.resolve(),
+      ]);
+    },
   };
 }
