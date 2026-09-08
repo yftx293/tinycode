@@ -5,6 +5,8 @@ import {
   type MockProviderOptions,
   type ModelRef,
 } from "./model/registry.js";
+import { createBuiltinTools } from "./tools/index.js";
+import { ToolRegistry } from "./tools/registry.js";
 
 export interface BootstrapHarnessOptions {
   projectRoot: string;
@@ -15,6 +17,7 @@ export interface BootstrapHarnessOptions {
 export interface TinyCodeHarness {
   runtime: TinyCodeRuntime;
   models: ModelRegistry;
+  tools: ToolRegistry;
 }
 
 export async function bootstrapHarness(
@@ -30,5 +33,11 @@ export async function bootstrapHarness(
     streamFn: models.streamFn,
     systemPrompt: buildSystemPrompt(options.projectRoot),
   });
-  return { runtime, models };
+  const tools = new ToolRegistry();
+  for (const tool of createBuiltinTools(options.projectRoot)) {
+    tools.register(tool);
+  }
+  runtime.agent.state.tools = tools.list();
+
+  return { runtime, models, tools };
 }
