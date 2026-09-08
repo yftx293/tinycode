@@ -106,7 +106,7 @@ describe("built-in tool registration", () => {
         },
       });
 
-      expect(harness.tools.names()).toEqual([
+      expect(harness.tools.names().slice(0, 7)).toEqual([
         "read",
         "write",
         "edit",

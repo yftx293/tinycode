@@ -10,11 +10,19 @@ import { ToolRegistry } from "./tools/registry.js";
 import { SessionManager } from "./session/manager.js";
 import { SessionStorage } from "./session/storage.js";
 import { ContextManager, type ContextManagerOptions } from "./context/manager.js";
+import { loadSkills } from "./skills/loader.js";
+import type { SkillRegistry } from "./skills/registry.js";
+import { McpManager } from "./mcp/manager.js";
+import type { StdioMcpServerConfig } from "./mcp/client.js";
 
 export interface BootstrapSessionOptions {
   directory: string;
   id?: string;
   continue?: boolean;
+}
+
+export interface BootstrapSkillOptions {
+  homeDirectory?: string;
 }
 
 export interface BootstrapHarnessOptions {
@@ -23,6 +31,8 @@ export interface BootstrapHarnessOptions {
   mock?: MockProviderOptions;
   session?: BootstrapSessionOptions;
   context?: Omit<ContextManagerOptions, "session">;
+  skills?: BootstrapSkillOptions;
+  mcpServers?: Record<string, StdioMcpServerConfig>;
 }
 
 export interface TinyCodeHarness {
@@ -31,6 +41,9 @@ export interface TinyCodeHarness {
   tools: ToolRegistry;
   session: SessionManager | undefined;
   context: ContextManager;
+  skills: SkillRegistry;
+  mcp: McpManager;
+  shutdown(): Promise<void>;
 }
 
 export async function bootstrapHarness(
@@ -56,18 +69,46 @@ export async function bootstrapHarness(
     ...options.context,
     ...(session === undefined ? {} : { session }),
   });
-  const runtime = new TinyCodeRuntime({
-    model,
-    streamFn: models.streamFn,
-    systemPrompt: buildSystemPrompt(options.projectRoot),
-    ...(session === undefined ? {} : { sessionManager: session }),
-    contextManager: context,
+  const skills = loadSkills({
+    projectRoot: options.projectRoot,
+    ...(options.skills?.homeDirectory === undefined
+      ? {}
+      : { homeDirectory: options.skills.homeDirectory }),
   });
+  const skillPrompt = skills.promptSection();
   const tools = new ToolRegistry();
   for (const tool of createBuiltinTools(options.projectRoot)) {
     tools.register(tool);
   }
+  tools.register(skills.createLoadTool());
+  const mcp = await McpManager.connect({
+    cwd: options.projectRoot,
+    ...(options.mcpServers === undefined
+      ? {}
+      : { servers: options.mcpServers }),
+  });
+  for (const tool of mcp.createTools(tools.names())) {
+    tools.register(tool);
+  }
+  const runtime = new TinyCodeRuntime({
+    model,
+    streamFn: models.streamFn,
+    systemPrompt: [buildSystemPrompt(options.projectRoot), skillPrompt]
+      .filter((section) => section.length > 0)
+      .join("\n\n"),
+    ...(session === undefined ? {} : { sessionManager: session }),
+    contextManager: context,
+  });
   runtime.agent.state.tools = tools.list();
 
-  return { runtime, models, tools, session, context };
+  return {
+    runtime,
+    models,
+    tools,
+    session,
+    context,
+    skills,
+    mcp,
+    shutdown: () => mcp.shutdown(),
+  };
 }
