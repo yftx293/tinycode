@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import {
   tinyCodeConfigSchema,
@@ -36,6 +36,7 @@ export interface ConfigWarning {
 
 export interface LoadConfigOptions {
   projectRoot: string;
+  userConfigPath?: string;
   env?: NodeJS.ProcessEnv;
   cli?: ConfigOverrides;
 }
@@ -44,6 +45,7 @@ export interface LoadedConfig {
   config: TinyCodeConfig;
   warnings: ConfigWarning[];
   projectConfigPath: string;
+  userConfigPath: string | undefined;
 }
 
 type UnknownConfig = Record<string, unknown>;
@@ -198,12 +200,36 @@ export function loadConfig(options: LoadConfigOptions): LoadedConfig {
   const projectConfig = existsSync(projectConfigPath)
     ? (JSON.parse(readFileSync(projectConfigPath, "utf8")) as unknown)
     : {};
+  const userConfig =
+    options.userConfigPath !== undefined && existsSync(options.userConfigPath)
+      ? (JSON.parse(readFileSync(options.userConfigPath, "utf8")) as unknown)
+      : {};
   const envConfig = configFromEnv(options.env ?? process.env);
-  const merged = mergeConfig(projectConfig, envConfig, options.cli ?? {});
+  const merged = mergeConfig(
+    userConfig,
+    projectConfig,
+    envConfig,
+    options.cli ?? {},
+  );
 
   return {
     config: tinyCodeConfigSchema.parse(merged),
-    warnings: findSuspiciousSecretFields(projectConfig),
+    warnings: [
+      ...findSuspiciousSecretFields(userConfig),
+      ...findSuspiciousSecretFields(projectConfig),
+    ],
     projectConfigPath,
+    userConfigPath: options.userConfigPath,
   };
+}
+
+export function saveUserConfig(
+  path: string,
+  config: TinyCodeConfig,
+): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(config, undefined, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
 }

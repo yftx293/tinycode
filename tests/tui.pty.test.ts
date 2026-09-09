@@ -1,4 +1,10 @@
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,6 +76,56 @@ afterEach(() => {
 });
 
 describe("interactive TUI in a pseudo-terminal", () => {
+  it("completes first-launch setup and persists a TUI settings change", async () => {
+    const stateDirectory = temporaryDirectory();
+    const userHome = temporaryDirectory();
+    const userConfigPath = join(userHome, ".tinycode", "config.json");
+    let output = "";
+    const processHandle = spawn(
+      process.execPath,
+      ["--import", "tsx", cliPath],
+      {
+        cwd: projectRoot,
+        cols: 120,
+        rows: 35,
+        env: stringEnvironment({
+          TINYCODE_HOME: stateDirectory,
+          USERPROFILE: userHome,
+          HOME: userHome,
+        }),
+      },
+    );
+    const outputSubscription = processHandle.onData((data) => {
+      output += data;
+    });
+    const exit = waitForExit(processHandle);
+
+    try {
+      await waitForOutput(processHandle, () => output, "请选择 [1/2]");
+      processHandle.write("1\r");
+      await waitForOutput(processHandle, () => output, "按 Enter 保存并启动 TinyCode");
+      processHandle.write("\r");
+      await waitForOutput(processHandle, () => output, "model mock/mock");
+
+      processHandle.write("/settings\r");
+      await waitForOutput(processHandle, () => output, "权限模式（TINYCODE_PERMISSION_MODE）");
+      processHandle.write("\x1b[B");
+      processHandle.write("\r");
+      processHandle.write("\x1b");
+      await waitForOutput(processHandle, () => output, "设置已保存并应用");
+      processHandle.write("/exit\r");
+
+      expect(await exit).toBe(0);
+      expect(existsSync(userConfigPath)).toBe(true);
+      expect(JSON.parse(readFileSync(userConfigPath, "utf8"))).toMatchObject({
+        model: { provider: "mock", model: "mock" },
+        permissionMode: "auto",
+      });
+    } finally {
+      outputSubscription.dispose();
+    }
+  }, 30_000);
+
   it("renders status, accepts /exit, and shuts down cleanly", async () => {
     const stateDirectory = temporaryDirectory();
     let output = "";

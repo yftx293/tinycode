@@ -40,6 +40,7 @@ export interface BootstrapHarnessOptions {
   skills?: BootstrapSkillOptions;
   mcpServers?: Record<string, StdioMcpServerConfig>;
   subAgents?: BootstrapSubAgentOptions;
+  maxOutputTokens?: number;
 }
 
 export interface TinyCodeHarness {
@@ -122,6 +123,9 @@ export async function bootstrapHarness(
       .join("\n\n"),
     ...(session === undefined ? {} : { sessionManager: session }),
     contextManager: context,
+    ...(options.maxOutputTokens === undefined
+      ? {}
+      : { maxOutputTokens: options.maxOutputTokens }),
   });
   runtime.agent.state.tools = tools.list();
 

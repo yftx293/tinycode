@@ -139,6 +139,7 @@ describe("slash command integration", () => {
       "resume",
       "sessions",
       "model",
+      "settings",
       "skills",
       "mcp",
       "agents",
@@ -146,6 +147,25 @@ describe("slash command integration", () => {
       "status",
       "exit",
     ]);
+  });
+
+  it("requests the settings panel from /settings", async () => {
+    const workspace = temporaryDirectory("settings-command");
+    const harness = await bootstrapHarness({
+      projectRoot: workspace,
+      mock: { responses: [] },
+    });
+    const controller = new SlashCommandController({
+      harness,
+      createHarness: () => Promise.resolve(harness),
+      sessionDirectory: temporaryDirectory("settings-command-sessions"),
+      projectRoot: workspace,
+    });
+
+    await expect(controller.execute("/settings")).resolves.toEqual({
+      openSettings: true,
+    });
+    await harness.shutdown();
   });
 
   it("keeps /clear in the same session and makes /new create a fresh session", async () => {

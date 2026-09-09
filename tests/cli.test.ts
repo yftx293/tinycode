@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +14,7 @@ import {
   fauxAssistantMessage,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { parseCliArgs } from "../src/cli/args.js";
 import { bootstrapHarness } from "../src/bootstrap.js";
@@ -103,6 +110,88 @@ describe("CLI argument parsing", () => {
 });
 
 describe("tinycode CLI", () => {
+  it("runs first-launch setup once and remembers the selected defaults", async () => {
+    const root = temporaryDirectory("first-launch");
+    const workspace = join(root, "workspace");
+    const stateDirectory = join(root, "sessions");
+    const userConfigPath = join(root, "user", ".tinycode", "config.json");
+    const setupPresenter = vi.fn().mockResolvedValue({
+      model: { provider: "mock", model: "mock" },
+      permissionMode: "ask",
+      maxOutputTokens: 4_096,
+      context: {
+        maxTokens: 32_000,
+        compactThreshold: 0.8,
+        toolResultMaxChars: 12_000,
+      },
+    });
+    const runTui = vi.fn().mockResolvedValue(0);
+    const firstIo = captureIo();
+
+    const firstCode = await runCli([], firstIo, {
+      ...dependencies(workspace, stateDirectory),
+      interactive: true,
+      userConfigPath,
+      setupPresenter,
+      runTui,
+    });
+
+    expect(firstCode).toBe(0);
+    expect(setupPresenter).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(readFileSync(userConfigPath, "utf8"))).toMatchObject({
+      model: { provider: "mock", model: "mock" },
+      permissionMode: "ask",
+      maxOutputTokens: 4_096,
+    });
+
+    const secondCode = await runCli([], captureIo(), {
+      ...dependencies(workspace, stateDirectory),
+      interactive: true,
+      userConfigPath,
+      setupPresenter,
+      runTui,
+    });
+
+    expect(secondCode).toBe(0);
+    expect(setupPresenter).toHaveBeenCalledTimes(1);
+  });
+
+  it("persists settings changed from the TUI", async () => {
+    const root = temporaryDirectory("tui-settings");
+    const workspace = join(root, "workspace");
+    const userConfigPath = join(root, "user", ".tinycode", "config.json");
+    mkdirSync(workspace, { recursive: true });
+    mkdirSync(join(root, "user", ".tinycode"), { recursive: true });
+    writeFileSync(
+      userConfigPath,
+      JSON.stringify({ model: { provider: "mock", model: "mock" } }),
+    );
+
+    const code = await runCli([], captureIo(), {
+      ...dependencies(workspace, join(root, "sessions")),
+      interactive: true,
+      userConfigPath,
+      runTui: async (_harness, options) => {
+        expect(options.settings().permissionMode).toBe("ask");
+        await options.saveSettings({
+          ...options.settings(),
+          permissionMode: "auto",
+          context: {
+            ...options.settings().context,
+            maxTokens: 64_000,
+          },
+        });
+        return 0;
+      },
+    });
+
+    expect(code).toBe(0);
+    expect(JSON.parse(readFileSync(userConfigPath, "utf8"))).toMatchObject({
+      permissionMode: "auto",
+      context: { maxTokens: 64_000 },
+    });
+  });
+
   it("prints help without an API key", async () => {
     const io = captureIo();
     const code = await runCli(["--help"], io, dependencies(projectRoot, temporaryDirectory("state")));

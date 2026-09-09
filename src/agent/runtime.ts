@@ -18,6 +18,7 @@ export interface TinyCodeRuntimeOptions {
   permissionManager?: PermissionManager;
   sessionManager?: SessionManager;
   contextManager?: ContextManager;
+  maxOutputTokens?: number;
 }
 
 export class TinyCodeRuntime {
@@ -26,6 +27,7 @@ export class TinyCodeRuntime {
   readonly context: ContextManager;
 
   constructor(options: TinyCodeRuntimeOptions) {
+    const maxOutputTokens = options.maxOutputTokens;
     this.permissions = options.permissionManager ?? new PermissionManager();
     this.context = options.contextManager ?? new ContextManager();
     this.agent = new Agent({
@@ -36,7 +38,14 @@ export class TinyCodeRuntime {
         tools: [],
         messages: options.sessionManager?.messages ?? [],
       },
-      streamFn: options.streamFn,
+      streamFn:
+        maxOutputTokens === undefined
+          ? options.streamFn
+          : (model, context, streamOptions) =>
+              options.streamFn(model, context, {
+                ...streamOptions,
+                maxTokens: maxOutputTokens,
+              }),
       transformContext: (messages) => Promise.resolve(this.context.transform(messages)),
       beforeToolCall: async ({ toolCall, args }): Promise<
         BeforeToolCallResult | undefined

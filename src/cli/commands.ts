@@ -23,6 +23,7 @@ export interface SlashCommandControllerOptions {
 export interface SlashCommandResult {
   output?: string;
   exit?: boolean;
+  openSettings?: boolean;
 }
 
 function requireArgument(name: string, argument: string): string {
@@ -91,6 +92,8 @@ export class SlashCommandController {
         this.harness.runtime.agent.state.model = model;
         return { output: `Model set to ${model.provider}/${model.id}` };
       }
+      case "settings":
+        return { openSettings: true };
       case "skills": {
         const names = this.harness.skills.names();
         return { output: names.length === 0 ? "No skills" : names.join("\n") };
@@ -130,6 +133,13 @@ export class SlashCommandController {
       default:
         throw new Error(`Unknown command: /${command.name}`);
     }
+  }
+
+  async reloadCurrentSession(): Promise<void> {
+    const sessionId = this.harness.session?.id;
+    await this.replaceHarness(
+      sessionId === undefined ? undefined : { id: sessionId },
+    );
   }
 
   private async replaceHarness(session?: SessionSelection): Promise<void> {

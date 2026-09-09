@@ -14,6 +14,9 @@ import {
   type TinyCodeHarness,
 } from "../bootstrap.js";
 import { loadConfig } from "../config/loader.js";
+import { saveUserConfig } from "../config/loader.js";
+import type { TinyCodeConfig } from "../config/schema.js";
+import { runFirstLaunchSetup } from "../tui/setup-wizard.js";
 import type { ModelRef, ScriptedMockResponse } from "../model/registry.js";
 import { runTinyCodeTui } from "../tui/app.js";
 import { parseCliArgs } from "./args.js";
@@ -43,6 +46,8 @@ export interface CliDependencies {
   stateDirectory?: string;
   mockResponses?: readonly ScriptedMockResponse[];
   interactive?: boolean;
+  userConfigPath?: string;
+  setupPresenter?: () => Promise<TinyCodeConfig>;
   bootstrap?: typeof bootstrapHarness;
   runTui?: (
     harness: TinyCodeHarness,
@@ -118,8 +123,16 @@ export async function runCli(
 
     const projectRoot = resolve(dependencies.cwd ?? process.cwd());
     const env = dependencies.env ?? process.env;
-    const loaded = loadConfig({
+    const interactive =
+      dependencies.interactive ??
+      (process.stdin.isTTY && process.stdout.isTTY);
+    const userConfigPath = resolve(
+      dependencies.userConfigPath ??
+        join(homedir(), ".tinycode", "config.json"),
+    );
+    let loaded = loadConfig({
       projectRoot,
+      userConfigPath,
       env,
       cli: {
         ...(parsed.model === undefined ? {} : { model: parsed.model }),
@@ -128,6 +141,30 @@ export async function runCli(
           : { permissionMode: parsed.permissionMode }),
       },
     });
+    const hasConfiguredModel =
+      loaded.config.model.provider !== undefined ||
+      loaded.config.model.model !== undefined;
+    if (
+      interactive &&
+      parsed.mock !== true &&
+      !hasConfiguredModel
+    ) {
+      saveUserConfig(
+        userConfigPath,
+        await (dependencies.setupPresenter ?? runFirstLaunchSetup)(),
+      );
+      loaded = loadConfig({
+        projectRoot,
+        userConfigPath,
+        env,
+        cli: {
+          ...(parsed.model === undefined ? {} : { model: parsed.model }),
+          ...(parsed.permissionMode === undefined
+            ? {}
+            : { permissionMode: parsed.permissionMode }),
+        },
+      });
+    }
     for (const warning of loaded.warnings) {
       io.stderr.write(`Warning: ${warning.message}\n`);
     }
@@ -136,8 +173,6 @@ export async function runCli(
         env.TINYCODE_HOME ??
         join(homedir(), ".tinycode", "sessions"),
     );
-    const configuredModel = normalizeModelRef(loaded.config.model);
-    const useMock = parsed.mock === true || isMockModel(configuredModel);
     const defaultMockResponse =
       parsed.prompt === undefined ? "TinyCode mock response" : `Mock response: ${parsed.prompt}`;
     const mockResponses =
@@ -146,24 +181,22 @@ export async function runCli(
         ? dependencies.mockResponses
         : [defaultMockResponse];
 
-    const baseOptions: BootstrapHarnessOptions = {
-      projectRoot,
-      model: configuredModel,
-      session: {
-        directory: stateDirectory,
-        ...(parsed.sessionId === undefined ? {} : { id: parsed.sessionId }),
-        ...(parsed.continue === undefined ? {} : { continue: parsed.continue }),
-      },
-      context: loaded.config.context,
-      mcpServers: loaded.config.mcpServers,
-      subAgents: {
-        toolResultMaxChars: loaded.config.context.toolResultMaxChars,
-      },
-      ...(useMock ? { mock: { responses: mockResponses } } : {}),
-    };
     const createHarness = async (
       selection?: { id?: string; continue?: boolean },
     ): Promise<TinyCodeHarness> => {
+      const configuredModel = normalizeModelRef(loaded.config.model);
+      const useMock = parsed.mock === true || isMockModel(configuredModel);
+      const baseOptions: BootstrapHarnessOptions = {
+        projectRoot,
+        model: configuredModel,
+        maxOutputTokens: loaded.config.maxOutputTokens,
+        context: loaded.config.context,
+        mcpServers: loaded.config.mcpServers,
+        subAgents: {
+          toolResultMaxChars: loaded.config.context.toolResultMaxChars,
+        },
+        ...(useMock ? { mock: { responses: mockResponses } } : {}),
+      };
       const next = await (dependencies.bootstrap ?? bootstrapHarness)({
         ...baseOptions,
         session: {
@@ -200,9 +233,6 @@ export async function runCli(
       return 0;
     }
 
-    const interactive =
-      dependencies.interactive ??
-      (process.stdin.isTTY && process.stdout.isTTY);
     if (!interactive) {
       throw new Error("Interactive mode requires a TTY; use -p for print mode");
     }
@@ -210,6 +240,22 @@ export async function runCli(
       projectRoot,
       sessionDirectory: stateDirectory,
       createHarness,
+      settings: () => loaded.config,
+      models: knownModels(),
+      saveSettings: (config) => {
+        saveUserConfig(userConfigPath, config);
+        loaded = loadConfig({
+          projectRoot,
+          userConfigPath,
+          env,
+          cli: {
+            ...(parsed.model === undefined ? {} : { model: parsed.model }),
+            ...(parsed.permissionMode === undefined
+              ? {}
+              : { permissionMode: parsed.permissionMode }),
+          },
+        });
+      },
     });
   } catch (error) {
     io.stderr.write(

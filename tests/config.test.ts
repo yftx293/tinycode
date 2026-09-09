@@ -39,6 +39,55 @@ describe("tinyCodeConfigSchema", () => {
 });
 
 describe("loadConfig", () => {
+  it("loads remembered user settings before project, environment, and CLI overrides", () => {
+    const root = mkdtempSync(join(tmpdir(), "tinycode-user-config-"));
+    const projectRoot = join(root, "project");
+    const userConfigPath = join(root, "home", ".tinycode", "config.json");
+
+    try {
+      mkdirSync(projectRoot, { recursive: true });
+      mkdirSync(join(projectRoot, ".tinycode"));
+      mkdirSync(join(root, "home", ".tinycode"), { recursive: true });
+      writeFileSync(
+        userConfigPath,
+        JSON.stringify({
+          model: { provider: "mock", model: "mock" },
+          permissionMode: "auto",
+          maxOutputTokens: 4_096,
+          context: {
+            maxTokens: 32_000,
+            compactThreshold: 0.8,
+            toolResultMaxChars: 12_000,
+          },
+        }),
+      );
+      writeFileSync(
+        join(projectRoot, ".tinycode", "config.json"),
+        JSON.stringify({ permissionMode: "ask" }),
+      );
+
+      const loaded = loadConfig({
+        projectRoot,
+        userConfigPath,
+        env: { TINYCODE_MAX_OUTPUT_TOKENS: "8192" },
+      });
+
+      expect(loaded.config).toMatchObject({
+        model: { provider: "mock", model: "mock" },
+        permissionMode: "ask",
+        maxOutputTokens: 8_192,
+        context: {
+          maxTokens: 32_000,
+          compactThreshold: 0.8,
+          toolResultMaxChars: 12_000,
+        },
+      });
+      expect(loaded.userConfigPath).toBe(userConfigPath);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("applies CLI overrides after environment and project configuration", () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "tinycode-config-"));
 

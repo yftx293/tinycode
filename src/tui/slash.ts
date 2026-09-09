@@ -11,6 +11,7 @@ export const slashCommands: readonly SlashCommandDefinition[] = [
   { name: "resume", usage: "/resume <id>", description: "Resume a session" },
   { name: "sessions", usage: "/sessions", description: "List project sessions" },
   { name: "model", usage: "/model [provider/model]", description: "Show or switch model" },
+  { name: "settings", usage: "/settings", description: "打开设置面板" },
   { name: "skills", usage: "/skills", description: "List skills" },
   { name: "mcp", usage: "/mcp", description: "Show MCP server status" },
   { name: "agents", usage: "/agents", description: "Show worker status" },

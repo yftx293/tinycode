@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import {
   contentText,
   createModels,
+  fauxAssistantMessage,
   fauxProvider,
   type Message,
 } from "@earendil-works/pi-ai";
@@ -27,6 +28,26 @@ function messageText(message: AgentMessage): string {
 }
 
 describe("TinyCodeRuntime", () => {
+  it("forwards the configured maximum output tokens to provider requests", async () => {
+    let observedMaxTokens: number | undefined;
+    const { runtime } = await bootstrapHarness({
+      projectRoot: "C:\\workspace\\output-limit",
+      maxOutputTokens: 1_234,
+      mock: {
+        responses: [
+          (_context, options) => {
+            observedMaxTokens = options?.maxTokens;
+            return fauxAssistantMessage("limited reply");
+          },
+        ],
+      },
+    });
+
+    await runtime.prompt("hello");
+
+    expect(observedMaxTokens).toBe(1_234);
+  });
+
   it("uses a scripted mock model for two turns and preserves message order", async () => {
     const { runtime } = await bootstrapHarness({
       projectRoot: "C:\\workspace\\demo",

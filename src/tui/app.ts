@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-tui";
 
 import type { TinyCodeHarness } from "../bootstrap.js";
+import type { TinyCodeConfig } from "../config/schema.js";
 import {
   SlashCommandController,
   type SessionSelection,
@@ -20,6 +21,10 @@ import {
 import { renderStatusBar } from "./status-bar.js";
 import { TranscriptModel } from "./transcript.js";
 import { editorTheme } from "./theme.js";
+import {
+  createSettingsPresenter,
+  type SettingsPresenter,
+} from "./settings.js";
 
 export type InterruptInput = "ctrl-c" | "ctrl-d" | "escape";
 
@@ -73,6 +78,10 @@ export interface TinyCodeTuiOptions {
   projectRoot: string;
   sessionDirectory: string;
   createHarness(session?: SessionSelection): Promise<TinyCodeHarness>;
+  settings(): TinyCodeConfig;
+  models: readonly string[];
+  saveSettings(config: TinyCodeConfig): Promise<void> | void;
+  settingsPresenter?: SettingsPresenter;
 }
 
 export async function runTinyCodeTui(
@@ -174,6 +183,18 @@ export async function runTinyCodeTui(
           }
           if (result.output !== undefined) {
             transcript.append(`status> ${result.output}`);
+          }
+          if (result.openSettings === true) {
+            const before = options.settings();
+            const updated = await (
+              options.settingsPresenter ?? createSettingsPresenter(tui)
+            )(before, options.models);
+            if (JSON.stringify(updated) !== JSON.stringify(before)) {
+              await options.saveSettings(updated);
+              await commands.reloadCurrentSession();
+              bindHarness();
+              transcript.append("status> 设置已保存并应用");
+            }
           }
           if (result.exit === true) {
             requestExit();

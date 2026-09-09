@@ -1,4 +1,8 @@
-import type { EditorTheme, SelectListTheme } from "@earendil-works/pi-tui";
+import type {
+  EditorTheme,
+  SelectListTheme,
+  SettingsListTheme,
+} from "@earendil-works/pi-tui";
 
 const identity = (text: string): string => text;
 
@@ -13,4 +17,12 @@ export const selectListTheme: SelectListTheme = {
 export const editorTheme: EditorTheme = {
   borderColor: identity,
   selectList: selectListTheme,
+};
+
+export const settingsListTheme: SettingsListTheme = {
+  label: identity,
+  value: identity,
+  description: identity,
+  cursor: "> ",
+  hint: identity,
 };

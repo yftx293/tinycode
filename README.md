@@ -31,6 +31,11 @@ project and an interactive pseudo-terminal test.
 
 ## CLI
 
+On the first interactive launch, TinyCode asks whether to use the offline mock
+model or configure a `provider/model` reference. It then stores the selection
+and default settings in `~/.tinycode/config.json`. Explicit `--mock`, `--model`,
+environment, or project model configuration skips this wizard.
+
 ```bash
 # Deterministic offline print mode
 TINYCODE_MODEL=mock node dist/cli/index.js -p "describe this project"
@@ -50,15 +55,16 @@ Supported options are `--help`, `--version`, `--model`, `--mock`,
 `--permission-mode ask|auto`.
 
 Interactive commands are `/help`, `/new`, `/clear`, `/resume`, `/sessions`,
-`/model`, `/skills`, `/mcp`, `/agents`, `/compact`, `/status`, and `/exit`.
+`/model`, `/settings`, `/skills`, `/mcp`, `/agents`, `/compact`, `/status`, and `/exit`.
 While busy, Ctrl+C, SIGINT, or Escape aborts the run. Ctrl+D exits. When idle,
 press Ctrl+C twice within two seconds to exit.
 
 ## Configuration
 
-Configuration precedence is CLI overrides, then environment variables, then
-`.tinycode/config.json`. API keys must be supplied through provider-specific
-environment variables; do not put secrets in the project configuration.
+Configuration precedence is CLI overrides, then environment variables, project
+`.tinycode/config.json`, and finally user `~/.tinycode/config.json`. API keys
+must be supplied through provider-specific environment variables; do not put
+secrets in either configuration file.
 
 ```json
 {
@@ -85,6 +91,12 @@ Relevant environment variables include `TINYCODE_PROVIDER`, `TINYCODE_MODEL`,
 `TINYCODE_CONTEXT_MAX_TOKENS`, `TINYCODE_CONTEXT_COMPACT_THRESHOLD`, and
 `TINYCODE_CONTEXT_TOOL_RESULT_MAX_CHARS`. Sessions default to
 `~/.tinycode/sessions`; `TINYCODE_HOME` overrides that directory for the CLI.
+
+Run `/settings` in the TUI to open the localized settings panel. It exposes
+permission mode, maximum output tokens, context token budget, compaction
+threshold, and tool-result character limit with Chinese labels and persists
+changes to the user configuration. The Harness is rebuilt against the current
+Session so changes apply immediately.
 
 ## Permissions and safety
 
@@ -120,8 +132,6 @@ run TinyCode only in a workspace you trust.
   not implemented; MCP results retain text only.
 - Manual compaction changes only live memory and is not persisted as a Session
   compaction record.
-- `maxOutputTokens` is validated as configuration but is not yet forwarded to
-  provider requests by the current Runtime.
 - Skills cannot be downloaded or automatically executed.
 - Workers are in-process and read-only; there is no remote worker transport,
   task DAG, or free-form worker messaging.
