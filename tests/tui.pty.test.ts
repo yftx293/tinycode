@@ -155,6 +155,7 @@ describe("interactive TUI in a pseudo-terminal", () => {
       await waitForOutput(processHandle, () => output, "权限模式（TINYCODE_PERMISSION_MODE）");
       processHandle.write("\x1b[B");
       processHandle.write("\r");
+      await waitForOutput(processHandle, () => output, "自动（auto）");
       processHandle.write("\x1b");
       await waitForOutput(processHandle, () => output, "设置已保存并应用");
       processHandle.write("/exit\r");
