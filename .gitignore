@@ -2,4 +2,14 @@ node_modules/
 dist/
 coverage/
 .tinycode/config.json
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
 *.tsbuildinfo
