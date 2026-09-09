@@ -4,10 +4,12 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -110,6 +112,25 @@ describe("CLI argument parsing", () => {
 });
 
 describe("tinycode CLI", () => {
+  it("runs when Node enters through a linked package path", () => {
+    const linkedRoot = join(temporaryDirectory("linked-entry"), "package");
+    symlinkSync(
+      projectRoot,
+      linkedRoot,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", join(linkedRoot, "src", "cli", "index.ts"), "--version"],
+      { cwd: linkedRoot, encoding: "utf8" },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("0.1.0\n");
+    expect(result.stderr).toBe("");
+  });
+
   it("runs first-launch setup once and remembers the selected defaults", async () => {
     const root = temporaryDirectory("first-launch");
     const workspace = join(root, "workspace");

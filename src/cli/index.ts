@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -269,7 +269,7 @@ export async function runCli(
 
 const isMain =
   process.argv[1] !== undefined &&
-  pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+  pathToFileURL(realpathSync(resolve(process.argv[1]))).href === import.meta.url;
 
 if (isMain) {
   void runCli(process.argv.slice(2)).then((exitCode) => {

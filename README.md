@@ -36,6 +36,22 @@ model or configure a `provider/model` reference. It then stores the selection
 and default settings in `~/.tinycode/config.json`. Explicit `--mock`, `--model`,
 environment, or project model configuration skips this wizard.
 
+For a convenient global development command, build once and register the local
+package with npm:
+
+```bash
+npm run build
+npm link
+```
+
+After that, run `tinycode` from any project directory. The current working
+directory becomes TinyCode's workspace:
+
+```bash
+cd /path/to/project
+tinycode
+```
+
 ```bash
 # Deterministic offline print mode
 TINYCODE_MODEL=mock node dist/cli/index.js -p "describe this project"
