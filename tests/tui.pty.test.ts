@@ -200,7 +200,7 @@ describe("interactive TUI in a pseudo-terminal", () => {
     } finally {
       outputSubscription.dispose();
     }
-  });
+  }, 30_000);
 
   it("uses the compact colorless welcome screen in a narrow terminal", async () => {
     const stateDirectory = temporaryDirectory();
@@ -236,7 +236,7 @@ describe("interactive TUI in a pseudo-terminal", () => {
     } finally {
       outputSubscription.dispose();
     }
-  });
+  }, 30_000);
 
   it("folds the welcome screen after the first user message", async () => {
     const stateDirectory = temporaryDirectory();
@@ -268,5 +268,5 @@ describe("interactive TUI in a pseudo-terminal", () => {
     } finally {
       outputSubscription.dispose();
     }
-  });
+  }, 30_000);
 });

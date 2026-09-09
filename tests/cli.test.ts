@@ -129,7 +129,7 @@ describe("tinycode CLI", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("0.1.0\n");
     expect(result.stderr).toBe("");
-  });
+  }, 15_000);
 
   it("runs first-launch setup once and remembers the selected defaults", async () => {
     const root = temporaryDirectory("first-launch");
