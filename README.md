@@ -25,9 +25,8 @@ npm test
 npm run build
 ```
 
-The default test suite is offline and needs no API key. It currently contains
-16 test files and 101 tests, including a real Pi-loop repair of a copied broken
-project and an interactive pseudo-terminal test.
+The default test suite is offline and needs no API key. It includes a real
+Pi-loop repair of a copied broken project and interactive pseudo-terminal tests.
 
 ## CLI
 
@@ -74,6 +73,14 @@ Interactive commands are `/help`, `/new`, `/clear`, `/resume`, `/sessions`,
 `/model`, `/settings`, `/skills`, `/mcp`, `/agents`, `/compact`, `/status`, and `/exit`.
 While busy, Ctrl+C, SIGINT, or Escape aborts the run. Ctrl+D exits. When idle,
 press Ctrl+C twice within two seconds to exit.
+
+The interactive startup screen keeps the editor focused and shows the current
+model, workspace, permission mode, Session, and up to three recent non-empty
+Sessions from the same workspace. Press Ctrl+R to choose and restore a recent
+Session, or Ctrl+N to start a new one. Restoring a Session also restores its
+user, assistant, and tool-result transcript. The welcome area folds after the
+first prompt or a successful restore. Narrow terminals use a compact layout;
+`NO_COLOR` and `TERM=dumb` disable decorative colors.
 
 ## Configuration
 

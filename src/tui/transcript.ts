@@ -11,12 +11,60 @@ function assistantText(message: AgentMessage): string {
     .join("");
 }
 
+function userText(message: AgentMessage): string {
+  if (message.role !== "user") {
+    return "";
+  }
+  return typeof message.content === "string"
+    ? message.content
+    : message.content
+        .flatMap((block) => (block.type === "text" ? [block.text] : []))
+        .join("\n");
+}
+
 export class TranscriptModel {
   private readonly renderedLines: string[] = [];
   private streamingLine: number | undefined;
 
   append(line: string): void {
     this.renderedLines.push(line);
+  }
+
+  hydrate(messages: readonly AgentMessage[]): void {
+    this.renderedLines.length = 0;
+    this.streamingLine = undefined;
+
+    for (const message of messages) {
+      if (message.role === "user") {
+        const text = userText(message);
+        if (text.length > 0) {
+          this.renderedLines.push(`user> ${text}`);
+        }
+        continue;
+      }
+      if (message.role === "assistant") {
+        if (message.errorMessage !== undefined) {
+          this.renderedLines.push(`error> ${message.errorMessage}`);
+          continue;
+        }
+        const text = assistantText(message);
+        if (text.length > 0) {
+          this.renderedLines.push(`assistant> ${text}`);
+        }
+        continue;
+      }
+      if (message.role === "toolResult") {
+        const rendered = renderToolEnd(
+          message.toolName,
+          { content: message.content, details: message.details as unknown },
+          message.isError,
+        );
+        this.renderedLines.push(rendered.summary);
+        if (rendered.detail !== undefined) {
+          this.renderedLines.push(rendered.detail);
+        }
+      }
+    }
   }
 
   consume(event: AgentEvent): void {

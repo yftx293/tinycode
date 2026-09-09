@@ -1,13 +1,20 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
+import {
+  fauxAssistantMessage,
+  type ToolResultMessage,
+  type UserMessage,
+} from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { bootstrapHarness } from "../src/bootstrap.js";
 import { SlashCommandController } from "../src/cli/commands.js";
+import { listSessions } from "../src/cli/sessions.js";
+import { SessionStorage } from "../src/session/storage.js";
+import { createSessionId } from "../src/session/types.js";
 import { InterruptController } from "../src/tui/app.js";
 import {
   installPermissionPrompt,
@@ -36,6 +43,40 @@ function event(value: AgentEvent): AgentEvent {
 }
 
 describe("TUI Agent event mapping", () => {
+  it("hydrates a restored transcript without duplicating previous lines", () => {
+    const transcript = new TranscriptModel();
+    const user: UserMessage = {
+      role: "user",
+      content: "continue the repair",
+      timestamp: 1,
+    };
+    const toolResult: ToolResultMessage = {
+      role: "toolResult",
+      toolCallId: "read-1",
+      toolName: "read",
+      content: [{ type: "text", text: "restored output" }],
+      details: {},
+      isError: false,
+      timestamp: 3,
+    };
+    const messages: AgentMessage[] = [
+      user,
+      fauxAssistantMessage("I will inspect it.", { timestamp: 2 }),
+      toolResult,
+    ];
+
+    transcript.append("stale status");
+    transcript.hydrate(messages);
+    transcript.hydrate(messages);
+
+    expect(transcript.lines()).toEqual([
+      "user> continue the repair",
+      "assistant> I will inspect it.",
+      "tool> read completed",
+      "restored output",
+    ]);
+  });
+
   it("maps streaming text, tool lifecycle, diff, exit code, and errors", () => {
     const transcript = new TranscriptModel();
     const assistant = fauxAssistantMessage("");
@@ -131,6 +172,40 @@ describe("permission dialog", () => {
 });
 
 describe("slash command integration", () => {
+  it("builds an identifiable recent-session list for the current workspace", () => {
+    const workspace = temporaryDirectory("recent-workspace");
+    const otherWorkspace = temporaryDirectory("recent-other");
+    const sessionDirectory = temporaryDirectory("recent-sessions");
+    const storage = new SessionStorage(sessionDirectory);
+    const appendUser = (id: string, content: string): void => {
+      const message: UserMessage = { role: "user", content, timestamp: 1 };
+      storage.appendMessage(id, message);
+    };
+    const oldest = storage.create(workspace, createSessionId(1_000));
+    const excluded = storage.create(workspace, createSessionId(2_000));
+    const middle = storage.create(workspace, createSessionId(3_000));
+    const newest = storage.create(workspace, createSessionId(4_000));
+    storage.create(workspace, createSessionId(5_000));
+    const other = storage.create(otherWorkspace, createSessionId(6_000));
+    appendUser(oldest.header.id, "old task");
+    appendUser(excluded.header.id, "excluded task");
+    appendUser(middle.header.id, "inspect   the\n session history");
+    appendUser(newest.header.id, "new task");
+    appendUser(other.header.id, "other project");
+
+    const sessions = listSessions(sessionDirectory, workspace, {
+      excludeId: excluded.header.id,
+      nonEmpty: true,
+      limit: 3,
+    });
+
+    expect(sessions.map(({ id, preview }) => [id, preview])).toEqual([
+      [newest.header.id, "new task"],
+      [middle.header.id, "inspect the session history"],
+      [oldest.header.id, "old task"],
+    ]);
+  });
+
   it("exposes every required command", () => {
     expect(slashCommands.map((command) => command.name)).toEqual([
       "help",
@@ -217,14 +292,16 @@ describe("status and terminal controls", () => {
       subAgents: {},
     });
 
-    expect(renderStatusBar(harness, workspace)).toContain("model mock/mock");
-    expect(renderStatusBar(harness, workspace)).toContain(`cwd ${workspace}`);
-    expect(renderStatusBar(harness, workspace)).toContain("context 0/");
+    const status = renderStatusBar(harness, workspace, { colorEnabled: false });
+    expect(status).toContain("● idle");
+    expect(status).toContain("model mock/mock");
+    expect(status).toContain(`cwd ${basename(workspace)}`);
+    expect(status).toContain("ctx 0/");
     expect(harness.session).toBeDefined();
-    expect(renderStatusBar(harness, workspace)).toContain(
-      `session ${harness.session?.id ?? "missing"}`,
+    expect(status).toContain(
+      `session ${(harness.session?.id ?? "missing").slice(0, 8)}`,
     );
-    expect(renderStatusBar(harness, workspace)).toContain("workers 0");
+    expect(status).toContain("workers 0");
     await harness.shutdown();
   });
 

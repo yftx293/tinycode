@@ -14,6 +14,7 @@ import {
   SlashCommandController,
   type SessionSelection,
 } from "../cli/commands.js";
+import { listSessions } from "../cli/sessions.js";
 import {
   createPermissionPresenter,
   installPermissionPrompt,
@@ -22,9 +23,16 @@ import { renderStatusBar } from "./status-bar.js";
 import { TranscriptModel } from "./transcript.js";
 import { editorTheme } from "./theme.js";
 import {
+  createSessionPresenter,
+  StartupActionController,
+  type SessionPresenter,
+  type StartupAction,
+} from "./startup-actions.js";
+import {
   createSettingsPresenter,
   type SettingsPresenter,
 } from "./settings.js";
+import { WelcomeView } from "./welcome.js";
 
 export type InterruptInput = "ctrl-c" | "ctrl-d" | "escape";
 
@@ -75,6 +83,7 @@ export class InterruptController {
 }
 
 export interface TinyCodeTuiOptions {
+  version: string;
   projectRoot: string;
   sessionDirectory: string;
   createHarness(session?: SessionSelection): Promise<TinyCodeHarness>;
@@ -82,6 +91,7 @@ export interface TinyCodeTuiOptions {
   models: readonly string[];
   saveSettings(config: TinyCodeConfig): Promise<void> | void;
   settingsPresenter?: SettingsPresenter;
+  sessionPresenter?: SessionPresenter;
 }
 
 export async function runTinyCodeTui(
@@ -100,6 +110,29 @@ export async function runTinyCodeTui(
     sessionDirectory: options.sessionDirectory,
     projectRoot: options.projectRoot,
   });
+  const currentSessions = (limit = 10) =>
+    listSessions(options.sessionDirectory, options.projectRoot, {
+      ...(commands.harness.session?.id === undefined
+        ? {}
+        : { excludeId: commands.harness.session.id }),
+      nonEmpty: true,
+      limit,
+    });
+  const currentModel = (): string => {
+    const model = commands.harness.runtime.agent.state.model;
+    return `${model.provider}/${model.id}`;
+  };
+  const welcome = new WelcomeView({
+    version: options.version,
+    projectRoot: options.projectRoot,
+    model: currentModel(),
+    permissionMode: options.settings().permissionMode,
+    sessionId: commands.harness.session?.id ?? "none",
+    recentSessions: currentSessions(3),
+  });
+  if (commands.harness.runtime.agent.state.messages.length > 0) {
+    welcome.collapse();
+  }
   let unsubscribe = (): void => undefined;
   let finished = false;
   let resolveExit: (() => void) | undefined;
@@ -112,8 +145,18 @@ export async function runTinyCodeTui(
     statusView.setText(renderStatusBar(commands.harness, options.projectRoot));
     tui.requestRender();
   };
+  const refreshWelcome = (): void => {
+    welcome.update({
+      model: currentModel(),
+      permissionMode: options.settings().permissionMode,
+      sessionId: commands.harness.session?.id ?? "none",
+      recentSessions: currentSessions(3),
+    });
+  };
   const bindHarness = (): void => {
     unsubscribe();
+    transcript.hydrate(commands.harness.runtime.agent.state.messages);
+    refreshWelcome();
     installPermissionPrompt(
       commands.harness.runtime.permissions,
       createPermissionPresenter(tui),
@@ -142,7 +185,64 @@ export async function runTinyCodeTui(
       refresh();
     },
   });
+  let startupActionPending = false;
+  const appendCommandOutput = (output: string | undefined): void => {
+    if (output !== undefined) {
+      transcript.append(`status> ${output}`);
+    }
+  };
+  const startupActions = new StartupActionController({
+    isBusy: () => commands.harness.runtime.agent.state.isStreaming,
+    recentSessions: () => currentSessions(),
+    selectSession:
+      options.sessionPresenter ?? createSessionPresenter(tui),
+    resume: async (id) => {
+      const result = await commands.execute(`/resume ${id}`);
+      welcome.collapse();
+      bindHarness();
+      appendCommandOutput(result.output);
+    },
+    startNew: async () => {
+      const result = await commands.execute("/new");
+      welcome.expand();
+      bindHarness();
+      appendCommandOutput(result.output);
+    },
+    notice: (message) => {
+      transcript.append(`status> ${message}`);
+      refresh();
+    },
+  });
+  const triggerStartupAction = (action: StartupAction): void => {
+    if (startupActionPending) {
+      transcript.append("status> 会话操作正在进行，请稍候。");
+      refresh();
+      return;
+    }
+    void (async () => {
+      try {
+        startupActionPending = true;
+        await startupActions.handle(action);
+      } catch (error) {
+        transcript.append(
+          `error> ${error instanceof Error ? error.message : "Unknown error"}`,
+        );
+      } finally {
+        startupActionPending = false;
+        tui.setFocus(editor);
+        refresh();
+      }
+    })();
+  };
   const removeInputListener = tui.addInputListener((data) => {
+    if (matchesKey(data, Key.ctrl("r"))) {
+      triggerStartupAction("resume");
+      return { consume: true };
+    }
+    if (matchesKey(data, Key.ctrl("n"))) {
+      triggerStartupAction("new");
+      return { consume: true };
+    }
     if (matchesKey(data, Key.ctrl("c"))) {
       controls.handle("ctrl-c");
       return { consume: true };
@@ -179,11 +279,15 @@ export async function runTinyCodeTui(
         if (input.startsWith("/")) {
           const result = await commands.execute(input);
           if (commands.harness !== previousHarness) {
+            if (input === "/new") {
+              welcome.expand();
+            } else if (input.startsWith("/resume ")) {
+              welcome.collapse();
+            }
             bindHarness();
           }
-          if (result.output !== undefined) {
-            transcript.append(`status> ${result.output}`);
-          }
+          refreshWelcome();
+          appendCommandOutput(result.output);
           if (result.openSettings === true) {
             const before = options.settings();
             const updated = await (
@@ -200,6 +304,7 @@ export async function runTinyCodeTui(
             requestExit();
           }
         } else {
+          welcome.collapse();
           transcript.append(`user> ${input}`);
           editor.disableSubmit = true;
           refresh();
@@ -216,6 +321,7 @@ export async function runTinyCodeTui(
     })();
   };
 
+  tui.addChild(welcome);
   tui.addChild(transcriptView);
   tui.addChild(statusView);
   tui.addChild(editor);

@@ -237,6 +237,7 @@ export async function runCli(
       throw new Error("Interactive mode requires a TTY; use -p for print mode");
     }
     return await (dependencies.runTui ?? runTinyCodeTui)(harness, {
+      version: readPackageVersion(),
       projectRoot,
       sessionDirectory: stateDirectory,
       createHarness,

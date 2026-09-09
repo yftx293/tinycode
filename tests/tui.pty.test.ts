@@ -10,7 +10,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { spawn, type IPty } from "node-pty";
+import type { UserMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { SessionStorage } from "../src/session/storage.js";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const cliPath = fileURLToPath(new URL("../src/cli/index.ts", import.meta.url));
@@ -76,6 +79,46 @@ afterEach(() => {
 });
 
 describe("interactive TUI in a pseudo-terminal", () => {
+  it("opens the recent-session selector and restores its transcript", async () => {
+    const stateDirectory = temporaryDirectory();
+    const storage = new SessionStorage(stateDirectory);
+    const previous = storage.create(projectRoot);
+    const message: UserMessage = {
+      role: "user",
+      content: "unfinished startup task",
+      timestamp: 1,
+    };
+    storage.appendMessage(previous.header.id, message);
+    let output = "";
+    const processHandle = spawn(
+      process.execPath,
+      ["--import", "tsx", cliPath, "--mock"],
+      {
+        cwd: projectRoot,
+        cols: 100,
+        rows: 35,
+        env: stringEnvironment({ TINYCODE_HOME: stateDirectory }),
+      },
+    );
+    const outputSubscription = processHandle.onData((data) => {
+      output += data;
+    });
+    const exit = waitForExit(processHandle);
+
+    try {
+      await waitForOutput(processHandle, () => output, "unfinished startup task");
+      processHandle.write("\x12");
+      await waitForOutput(processHandle, () => output, "继续最近会话");
+      processHandle.write("\r");
+      await waitForOutput(processHandle, () => output, "user> unfinished startup task");
+      processHandle.write("/exit\r");
+
+      expect(await exit).toBe(0);
+    } finally {
+      outputSubscription.dispose();
+    }
+  }, 30_000);
+
   it("completes first-launch setup and persists a TUI settings change", async () => {
     const stateDirectory = temporaryDirectory();
     const userHome = temporaryDirectory();
@@ -105,6 +148,7 @@ describe("interactive TUI in a pseudo-terminal", () => {
       processHandle.write("1\r");
       await waitForOutput(processHandle, () => output, "按 Enter 保存并启动 TinyCode");
       processHandle.write("\r");
+      await waitForOutput(processHandle, () => output, "TinyCode v0.1.0");
       await waitForOutput(processHandle, () => output, "model mock/mock");
 
       processHandle.write("/settings\r");
@@ -153,6 +197,74 @@ describe("interactive TUI in a pseudo-terminal", () => {
       expect(
         readdirSync(stateDirectory).filter((name) => name.endsWith(".jsonl")),
       ).toHaveLength(1);
+    } finally {
+      outputSubscription.dispose();
+    }
+  });
+
+  it("uses the compact colorless welcome screen in a narrow terminal", async () => {
+    const stateDirectory = temporaryDirectory();
+    let output = "";
+    const processHandle = spawn(
+      process.execPath,
+      ["--import", "tsx", cliPath, "--mock"],
+      {
+        cwd: projectRoot,
+        cols: 44,
+        rows: 20,
+        env: stringEnvironment({
+          TINYCODE_HOME: stateDirectory,
+          NO_COLOR: "1",
+          TERM: "dumb",
+        }),
+      },
+    );
+    const outputSubscription = processHandle.onData((data) => {
+      output += data;
+    });
+    const exit = waitForExit(processHandle);
+
+    try {
+      await waitForOutput(processHandle, () => output, "TinyCode v0.1.0");
+      expect(output).not.toContain("_____ _");
+      for (const code of [2, 91, 92, 93, 94, 96]) {
+        expect(output).not.toContain(`\u001b[${String(code)}m`);
+      }
+      processHandle.write("/exit\r");
+
+      expect(await exit).toBe(0);
+    } finally {
+      outputSubscription.dispose();
+    }
+  });
+
+  it("folds the welcome screen after the first user message", async () => {
+    const stateDirectory = temporaryDirectory();
+    let output = "";
+    const processHandle = spawn(
+      process.execPath,
+      ["--import", "tsx", cliPath, "--mock"],
+      {
+        cwd: projectRoot,
+        cols: 100,
+        rows: 30,
+        env: stringEnvironment({ TINYCODE_HOME: stateDirectory }),
+      },
+    );
+    const outputSubscription = processHandle.onData((data) => {
+      output += data;
+    });
+    const exit = waitForExit(processHandle);
+
+    try {
+      await waitForOutput(processHandle, () => output, "TinyCode v0.1.0");
+      const afterWelcome = output.length;
+      processHandle.write("hello\r");
+      await waitForOutput(processHandle, () => output, "TinyCode mock response");
+
+      expect(output.slice(afterWelcome)).not.toContain("TinyCode v0.1.0");
+      processHandle.write("/exit\r");
+      expect(await exit).toBe(0);
     } finally {
       outputSubscription.dispose();
     }

@@ -8,9 +8,51 @@ export interface SessionListItem {
   cwd: string;
   createdAt: string;
   messages: number;
+  preview: string;
 }
 
-export function listSessions(directory: string, cwd?: string): SessionListItem[] {
+export interface ListSessionsOptions {
+  excludeId?: string;
+  nonEmpty?: boolean;
+  limit?: number;
+}
+
+function userPreview(messages: readonly unknown[]): string {
+  const user = messages.find((message) => {
+    const record =
+      typeof message === "object" && message !== null
+        ? (message as Record<string, unknown>)
+        : undefined;
+    return record?.role === "user";
+  }) as { content?: unknown } | undefined;
+  const content = user?.content;
+  const text =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content
+            .flatMap((block) => {
+              const record =
+                typeof block === "object" && block !== null
+                  ? (block as Record<string, unknown>)
+                  : undefined;
+              return record?.type === "text" && typeof record.text === "string"
+                ? [record.text]
+                : [];
+            })
+            .join(" ")
+        : "";
+  const normalized = text.replaceAll(/\s+/gu, " ").trim();
+  return normalized.length <= 56
+    ? normalized
+    : `${normalized.slice(0, 53)}...`;
+}
+
+export function listSessions(
+  directory: string,
+  cwd?: string,
+  options: ListSessionsOptions = {},
+): SessionListItem[] {
   if (!existsSync(directory)) {
     return [];
   }
@@ -30,10 +72,18 @@ export function listSessions(directory: string, cwd?: string): SessionListItem[]
           cwd: snapshot.header.cwd,
           createdAt: snapshot.header.createdAt,
           messages: snapshot.messages.length,
+          preview: userPreview(snapshot.messages),
         }];
       } catch {
         return [];
       }
     })
-    .sort((left, right) => right.id.localeCompare(left.id));
+    .sort(
+      (left, right) =>
+        right.createdAt.localeCompare(left.createdAt) ||
+        right.id.localeCompare(left.id),
+    )
+    .filter((session) => session.id !== options.excludeId)
+    .filter((session) => options.nonEmpty !== true || session.messages > 0)
+    .slice(0, options.limit ?? Number.POSITIVE_INFINITY);
 }
