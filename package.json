@@ -2,6 +2,24 @@
   "name": "tinycode-reimplementation",
   "version": "0.1.0",
   "description": "A minimal coding agent harness built on Pi",
+  "keywords": [
+    "coding-agent",
+    "terminal",
+    "tui",
+    "llm",
+    "mcp",
+    "pi-agent"
+  ],
+  "author": "yftx293",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yftx293/tinycode.git"
+  },
+  "homepage": "https://github.com/yftx293/tinycode#readme",
+  "bugs": {
+    "url": "https://github.com/yftx293/tinycode/issues"
+  },
   "type": "module",
   "private": true,
   "engines": {
