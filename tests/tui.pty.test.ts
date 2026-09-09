@@ -135,6 +135,7 @@ describe("interactive TUI in a pseudo-terminal", () => {
           TINYCODE_HOME: stateDirectory,
           USERPROFILE: userHome,
           HOME: userHome,
+          NO_COLOR: "1",
         }),
       },
     );
@@ -154,6 +155,11 @@ describe("interactive TUI in a pseudo-terminal", () => {
       processHandle.write("/settings\r");
       await waitForOutput(processHandle, () => output, "权限模式（TINYCODE_PERMISSION_MODE）");
       processHandle.write("\x1b[B");
+      await waitForOutput(
+        processHandle,
+        () => output,
+        "> 权限模式（TINYCODE_PERMISSION_MODE）",
+      );
       processHandle.write("\r");
       await waitForOutput(processHandle, () => output, "自动（auto）");
       processHandle.write("\x1b");
